@@ -34,6 +34,7 @@ PIDPREFIX = grinder.getProperties().getProperty('pidprefix')
 log = grinder.logger.output # alias
 
 
+testCycle = Test(0,"Full Cycle")
 
 test1 = Test(1, "RetrieveDC")
 test2 = Test(2, "Ingest")
@@ -155,6 +156,32 @@ ingestWrap = ingest #test1.wrap(ingest) #ingest requests
 requestDCWrap = requestDC #test2.wrap(requestDC) #retrieve DC
 addRelWrap = addRel #test3.wrap(addRel) #retrieve RELS-EXT
         
+def lifeCycle():
+        global ingestCount
+        global first
+        global RETRIEVECOUNT
+        global INGEST_PROP
+        global runs
+        runs = int(runs) + 1
+        log('started nr. '+str(runs))
+
+        if int(ingestCount)-int(first) < int(RETRIEVECOUNT):
+            log("ingestcount "+str(ingestCount)+", doing ingest")
+            ingestWrap()
+        else:
+            log("stuff in there, retriving")
+            pids = requestDCWrap(RETRIEVECOUNT)
+            log("decide on ingest or rel-add")
+            randomnumber = random.random()
+            log("randumnumber = "+str(randomnumber))
+            if float(randomnumber) > float(INGEST_PROP):
+                log("add rel to existing")
+                addRelWrap(pids)
+            else:
+                log("ingest new object")
+                ingestWrap()
+
+lifeCycleWrap = testCycle.wrap(lifeCycle)
 
 class TestRunner:
 
@@ -172,32 +199,7 @@ class TestRunner:
                               self.initialisationTime)
                             
     def __call__(self):
-        
-        global ingestCount
-        global first
-        global RETRIEVECOUNT
-        global INGEST_PROP
-        global runs
-        runs = int(runs) + 1
-        log('started nr. '+str(runs))
-                
-        
-        if int(ingestCount)-int(first) < int(RETRIEVECOUNT):
-            log("ingestcount "+str(ingestCount)+", doing ingest")
-            ingestWrap()
-        else:
-            log("stuff in there, retriving")
-            pids = requestDCWrap(RETRIEVECOUNT)
-            log("decide on ingest or rel-add")
-            randomnumber = random.random()
-            log("randumnumber = "+str(randomnumber))
-            if float(randomnumber) > float(INGEST_PROP):
-                log("add rel to existing")
-                addRelWrap(pids)
-            else:
-                log("ingest new object")
-                ingestWrap()
-            
+        lifeCycleWrap()
 
 
 
