@@ -51,7 +51,7 @@ dedupobject = FileInputStream('fcagent-file-store/current/DataWellDeDup.xml')
 
 requestDCHTTP = test1.wrap(HTTPRequest())
 ingestHTTP = test2.wrap(HTTPRequest())
-modifyDatastreamHTTP = test3.wrap(HTTPRequest())
+
 requestRELSEXT = test4.wrap(HTTPRequest())
 
 
@@ -119,24 +119,62 @@ def requestDC(number):
     for i in range(0,int(number)) :
             
         #todo something about seed
-        index = random.randint(int(first)+1,int(currentMax))
+        index = random.randint(int(first)+1,int(currentMax)-1)
         log("requesting "+ str(index) + "as nr " + str(i))
         pid = PIDPREFIX+str(index)
-        pids.append(pid)
+
         target = SERVER + '/objects/' + pid + '/datastreams/DC/content'
         result = request.GET(target)
+        if (result.getStatusCode() == 200):
+            pids.append(pid)
+            
     return pids
-    
+
+def modifyDefensively(targetIN,rdf,auth):
+    attempts = 0
+    log("modifying object defensively")
+    while (attempts<5):
+        result = HTTPRequest().PUT(targetIN,rdf,[auth])
+        status = result.getStatusCode()
+        if status >= 200 and status < 300:
+            break
+        else:
+            log("failed attempt "+str(attempts))
+            grinder.sleep(1000)
+            attempts = attempts+1
+            #todo sleep a while
+    stats = grinder.getStatistics().getForCurrentTest()
+    status = result.getStatusCode()
+    if status >= 200 and status < 300:
+        stats.setSuccess(True)
+    else:
+        log("failed to modifyDefensively, ended with status "+str(status))
+        stats.setSuccess(False)
+
+modifyDatastreamHTTP = test3.wrap(modifyDefensively)
+   
+def pickRandomPid(pids):
+    index = random.randint(1,len(pids))
+    pid = pids[index-1]
+    return pid
+
 def addRel(pids):
     global auth
     log("adding rel")
-    index = random.randint(1,len(pids))
-    pid = pids[index-1]
-    log("adding rel to " + pid)
-    
+
+    pid = pickRandomPid(pids)
     targetOUT = SERVER + '/objects/' + pid + '/datastreams/MY-RELS-EXT/content'
-    targetIN = SERVER + '/objects/' + pid + '/datastreams/MY-RELS-EXT'
     result = requestRELSEXT.GET(targetOUT,[auth])
+    if (result.getStatusCode() != 200):
+        #very dirty check of the object exists. I dont think we will randomly pick two nonexisting objects in a row
+        pids.remove(pid)
+        pid = pickRandomPid(pids)
+        targetOUT = SERVER + '/objects/' + pid + '/datastreams/MY-RELS-EXT/content'
+        result = requestRELSEXT.GET(targetOUT,[auth])
+    
+    log("adding rel to " + pid)
+    targetIN = SERVER + '/objects/' + pid + '/datastreams/MY-RELS-EXT'
+
     rdf = str(result.getText())
     log("getting rdf result " + rdf)
     end1 = '</rdf:Description>'
@@ -149,7 +187,11 @@ def addRel(pids):
     rdf = rdf + relation
     rdf = rdf + end1 + end2
     log("new rdf "+rdf)
-    result = modifyDatastreamHTTP.PUT(targetIN,rdf,[auth])
+    modifyDatastreamHTTP(targetIN,rdf,auth)
+    #this can fail to locking, make it retry until succes
+
+
+
         
 
 ingestWrap = ingest #test1.wrap(ingest) #ingest requests
@@ -187,11 +229,15 @@ class TestRunner:
 
     def __init__(self):
         global first
-        print "TesttRunner created"
-        pid = establishFirst()
-        number = pid.replace(PIDPREFIX,"")
-        first = number
-        print "found "+first+" as the first nonused pid"
+        log("TestRunner created")
+        startingpid = grinder.getProperties().getProperty('firstpid')
+        if (startingpid is not None and startingpid > 0):
+            first = startingpid
+        else:
+            pid = establishFirst()
+            number = pid.replace(PIDPREFIX,"")
+            first = number
+        log("found "+first+" as the first nonused pid")
         
         self.initialisationTime = System.currentTimeMillis()
 
